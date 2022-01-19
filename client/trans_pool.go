@@ -3,21 +3,26 @@ package client
 import (
 	"io"
 	"strings"
+
+	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/wenjy/gothrift/pool"
 )
 
-// 连接池
-var connPool *ConnPool
-
 type TransPool struct {
-	connPool *ConnPool
+	connPool *pool.ConnPool
 }
 
-func NewTransPool(host, port string) *TransPool {
-	return &TransPool{connPool: pool}
+func NewTransPool(opt *pool.Options) *TransPool {
+	return &TransPool{connPool: pool.NewConnPool(opt)}
+}
+
+func (t *TransPool) Client(serviceName string, tConfig *thrift.TConfiguration) (rc *RetryClient, err error) {
+	rc, err = NewRetryClient(t, serviceName, tConfig)
+	return
 }
 
 // 从连接池获取连接
-func (t *TransPool) GetConn() (*Conn, error) {
+func (t *TransPool) GetConn() (*pool.Conn, error) {
 	c, err := t.connPool.Get(defaultCtx)
 	if err != nil {
 		return nil, err
@@ -27,7 +32,7 @@ func (t *TransPool) GetConn() (*Conn, error) {
 }
 
 // 把连接放入连接池
-func (t *TransPool) PutConn(c *Conn, err error) {
+func (t *TransPool) PutConn(c *pool.Conn, err error) {
 	// 已关闭的连接不再放回去
 	if err != nil && connIsClose(err) {
 		// 从总连接池删除
@@ -43,7 +48,7 @@ func (t *TransPool) ClosePool() error {
 }
 
 // 连接池状态
-func (t *TransPool) PoolStats() *Stats {
+func (t *TransPool) PoolStats() *pool.Stats {
 	return t.connPool.Stats()
 }
 

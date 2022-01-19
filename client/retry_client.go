@@ -5,19 +5,25 @@ import (
 	"fmt"
 
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/wenjy/gothrift/pool"
 )
 
 // RetryClient 重写 thrift.TStandardClient 实现重试的客户端
 type RetryClient struct {
 	seqId        int32
 	iprot, oprot thrift.TProtocol
-	conn         *Conn
+	conn         *pool.Conn
 	err          error
+
+	transPool *TransPool
+
+	serviceName string // use MultiplexedProtocol
+	tConfig     *thrift.TConfiguration
 }
 
-// NewRetryClient new
-func NewRetryClient() (rc *RetryClient, err error) {
-	rc = new(RetryClient)
+//
+func NewRetryClient(tp *TransPool, serviceName string, tConfig *thrift.TConfiguration) (rc *RetryClient, err error) {
+	rc = &RetryClient{transPool: tp, serviceName: serviceName, tConfig: tConfig}
 	err = rc.retryGetConn()
 	return
 }
@@ -116,7 +122,7 @@ func (p *RetryClient) Call(ctx context.Context, method string, args, result thri
 		headers = hp.GetReadHeaders()
 	}
 
-	PutConn(p.conn, p.err)
+	p.transPool.PutConn(p.conn, p.err)
 	return thrift.ResponseMeta{
 		Headers: headers,
 	}, p.err
@@ -126,16 +132,23 @@ func (p *RetryClient) Call(ctx context.Context, method string, args, result thri
 func (p *RetryClient) retryGetConn() (err error) {
 	// 释放旧连接
 	if p.conn != nil {
-		PutConn(p.conn, p.err)
+		p.transPool.PutConn(p.conn, p.err)
 	}
 
-	p.conn, err = GetConn()
+	p.conn, err = p.transPool.GetConn()
 	if err != nil {
 		return
 	}
 
-	protocolFactory := thrift.NewTBinaryProtocolFactoryDefault()
-	p.oprot = protocolFactory.GetProtocol(p.conn.GetTSocket())
-	p.iprot = protocolFactory.GetProtocol(p.conn.GetTSocket())
+	if p.serviceName != "" {
+		protocol := thrift.NewTBinaryProtocolConf(p.conn.GetTSocket(), p.tConfig)
+		mp := thrift.NewTMultiplexedProtocol(protocol, p.serviceName)
+		p.iprot = mp
+		p.oprot = mp
+	} else {
+		protocolFactory := thrift.NewTBinaryProtocolFactoryDefault()
+		p.oprot = protocolFactory.GetProtocol(p.conn.GetTSocket())
+		p.iprot = protocolFactory.GetProtocol(p.conn.GetTSocket())
+	}
 	return nil
 }
