@@ -15,16 +15,14 @@ var (
 )
 
 type TServer struct {
-	addr          string //
+	addr          string
 	clientTimeout time.Duration
+	tlsConfig     *tls.Config
 
 	transportFactory thrift.TTransportFactory
 	protocolFactory  thrift.TProtocolFactory
 	processor        thrift.TProcessor
-
-	tlsConfig *tls.Config
-
-	Server *thrift.TSimpleServer
+	Server           *thrift.TSimpleServer
 }
 
 func NewTServer(addr string) *TServer {
