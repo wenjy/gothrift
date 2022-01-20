@@ -8,6 +8,12 @@ import (
 	"github.com/apache/thrift/lib/go/thrift"
 )
 
+var (
+	defaultBufferSize  = 8192
+	defaultStrictRead  = false
+	defaultStrictWrite = false
+)
+
 type TServer struct {
 	addr          string //
 	clientTimeout time.Duration
@@ -21,15 +27,36 @@ type TServer struct {
 	Server *thrift.TSimpleServer
 }
 
-func NewTServer(tf thrift.TTransportFactory, pf thrift.TProtocolFactory, p thrift.TProcessor, addr string, clientTimeout time.Duration, tlsConfig *tls.Config) *TServer {
+func NewTServer(addr string) *TServer {
+	pf := thrift.NewTBinaryProtocolFactoryConf(&thrift.TConfiguration{
+		TBinaryStrictRead:  &defaultStrictRead,
+		TBinaryStrictWrite: &defaultStrictWrite,
+	})
+
+	tf := thrift.NewTBufferedTransportFactory(defaultBufferSize)
+	p := thrift.NewTMultiplexedProcessor()
+
+	return NewTServer6(tf, pf, p, addr, 0, nil)
+}
+
+func NewTServer6(tf thrift.TTransportFactory, pf thrift.TProtocolFactory, p thrift.TProcessor, addr string, clientTimeout time.Duration, tlsConfig *tls.Config) *TServer {
 	return &TServer{
+		addr:             addr,
+		clientTimeout:    clientTimeout,
 		transportFactory: tf,
 		protocolFactory:  pf,
 		processor:        p,
-		addr:             addr,
-		clientTimeout:    clientTimeout,
 		tlsConfig:        tlsConfig,
 	}
+}
+
+func (s *TServer) RegisterProcessor(name string, processor thrift.TProcessor) error {
+	p, ok := s.processor.(*thrift.TMultiplexedProcessor)
+	if !ok {
+		return errors.New("processor is not TMultiplexedProcessor.")
+	}
+	p.RegisterProcessor(name, processor)
+	return nil
 }
 
 func (s *TServer) Serve() error {
